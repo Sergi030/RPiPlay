@@ -123,16 +123,27 @@ static int parse_hw_addr(std::string str, std::vector<char> &hw_addr) {
     return 0;
 }
 
-std::string find_mac() {
-    std::ifstream iface_stream("/sys/class/net/eth0/address");
-    if (!iface_stream) {
-        iface_stream.open("/sys/class/net/wlan0/address");
-    }
-    if (!iface_stream) return "";
+std::string find_mac(std::string interface) {
+    std::string path = "/sys/class/net/";
+    std::string file = "/address";
 
+    std::string mac_address_file = path + interface + file;
+
+    std::ifstream iface_stream(mac_address_file);
+    if (!iface_stream) return "";
     std::string mac_address;
     iface_stream >> mac_address;
     iface_stream.close();
+    return mac_address;
+}
+
+std::string find_mac() {
+
+    std::string mac_address = find_mac("eth0");
+    if (mac_address.empty()) {
+        mac_address = find_mac("wlan0");
+    }
+
     return mac_address;
 }
 
@@ -156,7 +167,7 @@ static audio_init_func_t find_audio_init_func(const char *name) {
 
 void print_info(char *name) {
     printf("RPiPlay %s: An open-source AirPlay mirroring server for Raspberry Pi\n", VERSION);
-    printf("Usage: %s [-n name] [-b (on|auto|off)] [-r (90|180|270)] [-l] [-a (hdmi|analog|off)] [-vr renderer] [-ar renderer]\n", name);
+    printf("Usage: %s [-n name] [-b (on|auto|off)] [-r (90|180|270)] [-l] [-a (hdmi|analog|off)] [-vr renderer] [-ar renderer] [-i network_interface]\n", name);
     printf("Options:\n");
     printf("-n name               Specify the network name of the AirPlay server\n");
     printf("-b (on|auto|off)      Show black background always, only during active connection, or never\n");
@@ -173,6 +184,7 @@ void print_info(char *name) {
         printf("    %s: %s%s\n", audio_renderers[i].name, audio_renderers[i].description, i == 0 ? " [Default]" : "");
     }
     printf("-d                    Enable debug logging\n");
+    printf("-i                    Specify network interface. This is necessary to run multiple instances of RPiPlay on the same network\n");
     printf("-v/-h                 Displays this help and version information\n");
 }
 
@@ -196,6 +208,9 @@ int main(int argc, char *argv[]) {
     // Default to the best available renderer
     video_init_func = video_renderers[0].init_func;
     audio_init_func = audio_renderers[0].init_func;
+
+
+    std::string custom_mac_address = "";
 
     // Parse arguments
     for (int i = 1; i < argc; i++) {
@@ -254,13 +269,27 @@ int main(int argc, char *argv[]) {
                 fprintf(stderr, "Error: Unable to locate audio renderer \"%s\".\n", argv[i]);
                 exit(1);
             }
+        } else if (arg == "-i") {
+            if (i == argc - 1) {
+                fprintf(stderr, "Error: You must supply the name of an network interface after the -i argument.\n");
+                exit(1);
+            }
+            custom_mac_address = find_mac(argv[++i]);
+            if (custom_mac_address.empty()) {
+                fprintf(stderr, "Error: Unable to locate the specified network address: \"%s\" (Only works on unix systems).\n", argv[i]);
+                exit(1);
+            }
         } else if (arg == "-h" || arg == "-v") {
             print_info(argv[0]);
             exit(0);
         }
     }
 
-    std::string mac_address = find_mac();
+    std::string mac_address = custom_mac_address;
+    if (mac_address.empty()) {
+        mac_address = find_mac();
+    }
+
     if (!mac_address.empty()) {
         server_hw_addr.clear();
         parse_hw_addr(mac_address, server_hw_addr);
