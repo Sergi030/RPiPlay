@@ -24,6 +24,7 @@
 #include <string>
 #include <vector>
 #include <fstream>
+#include <iostream>
 
 #include "log.h"
 #include "lib/raop.h"
@@ -147,6 +148,26 @@ std::string find_mac() {
     return mac_address;
 }
 
+static std::string generate_random_mac_address()
+{
+    srand(time(NULL) + getpid());
+    std::string mac;
+
+    char hex_characters[]={'0','1','2','3','4','5','6','7','8','9','A','B','C','D','E','F'};
+
+    char c;
+    for(int i=0;i<12;i++)
+    {
+        c = hex_characters[rand()%16];
+        mac.push_back(c);
+        if (i%2 == 1)
+            mac.push_back(':');
+    }
+
+    mac.pop_back(); // remove last character that is a ':'
+    return mac;
+}
+
 static video_init_func_t find_video_init_func(const char *name) {
     for (int i = 0; i < sizeof(video_renderers)/sizeof(video_renderers[0]); i++) {
         if (!strcmp(name, video_renderers[i].name)) {
@@ -184,7 +205,8 @@ void print_info(char *name) {
         printf("    %s: %s%s\n", audio_renderers[i].name, audio_renderers[i].description, i == 0 ? " [Default]" : "");
     }
     printf("-d                    Enable debug logging\n");
-    printf("-i                    Specify network interface. This is necessary to run multiple instances of RPiPlay on the same network\n");
+    printf("-i                    Specify network interface. This is necessary to run multiple instances of RPiPlay on the same network.\n");
+    printf("--randomMac           This option is necessary to run multiple instances of RPiPlay on the same computer. The -i option conflict with this option.\n");
     printf("-v/-h                 Displays this help and version information\n");
 }
 
@@ -210,6 +232,7 @@ int main(int argc, char *argv[]) {
     audio_init_func = audio_renderers[0].init_func;
 
 
+    bool random_mac = false;
     std::string custom_mac_address = "";
 
     // Parse arguments
@@ -279,10 +302,33 @@ int main(int argc, char *argv[]) {
                 fprintf(stderr, "Error: Unable to locate the specified network address: \"%s\" (Only works on unix systems).\n", argv[i]);
                 exit(1);
             }
+        } else if (arg == "--randomMac") {
+            random_mac = true;
         } else if (arg == "-h" || arg == "-v") {
             print_info(argv[0]);
             exit(0);
         }
+    }
+
+    
+    if (random_mac){
+
+            if (not custom_mac_address.empty()){
+                fprintf(stderr, "Error: --randomMac cannot be used with the -i option.\n");
+                exit(1);
+            } 
+
+            custom_mac_address = generate_random_mac_address();
+
+            // Check if the -n option was set
+            if (server_name == DEFAULT_NAME){
+                server_name.push_back('-');
+                server_name.push_back(custom_mac_address[0]);
+                server_name.push_back(custom_mac_address[1]);
+                server_name.push_back(custom_mac_address[3]);
+                server_name.push_back(custom_mac_address[4]);
+                std::cout << "RPiPlay instance name: " <<server_name << std::endl;
+            } 
     }
 
     std::string mac_address = custom_mac_address;
