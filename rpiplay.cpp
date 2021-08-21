@@ -44,6 +44,8 @@
 #define DEFAULT_ROTATE 0
 #define DEFAULT_FLIP FLIP_NONE
 #define DEFAULT_HW_ADDRESS { (char) 0x48, (char) 0x5d, (char) 0x60, (char) 0x7c, (char) 0xee, (char) 0x22 }
+#define MULTICAST 0
+#define LOCAL 1
 
 int start_server(std::vector<char> hw_addr, std::string name, bool debug_log,
                  video_renderer_config_t const *video_config, audio_renderer_config_t const *audio_config);
@@ -148,24 +150,19 @@ std::string find_mac() {
     return mac_address;
 }
 
-static std::string generate_random_mac_address()
-{
-    srand(time(NULL) + getpid());
-    std::string mac;
-
-    char hex_characters[]={'0','1','2','3','4','5','6','7','8','9','A','B','C','D','E','F'};
-
-    char c;
-    for(int i=0;i<12;i++)
-    {
-        c = hex_characters[rand()%16];
-        mac.push_back(c);
-        if (i%2 == 1)
-            mac.push_back(':');
+static int set_random_hw_addr(std::vector<char> &hw_addr) {
+    int octet;
+    for (int i = 0; i < hw_addr.size(); i++) {
+        if (i == 0) {
+            octet = rand()%64;
+            octet = (octet << 1) + LOCAL;
+            octet = (octet << 1) + MULTICAST;
+        } else {
+            octet =  rand()%256;
+        }
+        hw_addr.at(i) = (char) octet ;
     }
-
-    mac.pop_back(); // remove last character that is a ':'
-    return mac;
+    return 0;
 }
 
 static video_init_func_t find_video_init_func(const char *name) {
@@ -313,32 +310,23 @@ int main(int argc, char *argv[]) {
     
     if (random_mac){
 
-            if (not custom_mac_address.empty()){
-                fprintf(stderr, "Error: --randomMac cannot be used with the -i option.\n");
-                exit(1);
-            } 
+        if (not custom_mac_address.empty()){
+            fprintf(stderr, "Error: --randomMac cannot be used with the -i option.\n");
+            exit(1);
+        } 
 
-            custom_mac_address = generate_random_mac_address();
+	    srand(time(NULL) + getpid());
+        set_random_hw_addr(server_hw_addr);
 
-            // Check if the -n option was set
-            if (server_name == DEFAULT_NAME){
-                server_name.push_back('-');
-                server_name.push_back(custom_mac_address[0]);
-                server_name.push_back(custom_mac_address[1]);
-                server_name.push_back(custom_mac_address[3]);
-                server_name.push_back(custom_mac_address[4]);
-                std::cout << "RPiPlay instance name: " <<server_name << std::endl;
-            } 
-    }
-
-    std::string mac_address = custom_mac_address;
-    if (mac_address.empty()) {
-        mac_address = find_mac();
-    }
-
-    if (!mac_address.empty()) {
-        server_hw_addr.clear();
-        parse_hw_addr(mac_address, server_hw_addr);
+    } else {
+        std::string mac_address = custom_mac_address; 
+        if (mac_address.empty()) {
+            mac_address = find_mac();
+        }
+        if (!mac_address.empty()) {
+           server_hw_addr.clear();
+           parse_hw_addr(mac_address, server_hw_addr);
+       }
     }
 
     if (start_server(server_hw_addr, server_name, debug_log, &video_config, &audio_config) != 0) {
