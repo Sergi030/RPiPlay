@@ -126,6 +126,35 @@ static int parse_hw_addr(std::string str, std::vector<char> &hw_addr) {
     return 0;
 }
 
+#ifdef __APPLE__
+std::string find_mac(const char *interface) {
+    // https://field-notes.hatenablog.jp/entry/20101216/1292467817
+    struct ifaddrs *ifa_list, *ifa; 
+    struct sockaddr_dl *dl; 
+    char name[12];
+    unsigned char *addr;
+    char macaddr[256] = "";
+    std::string mac_address = ""; 
+    if (getifaddrs(&ifa_list) < 0) {
+        return "";
+    }
+    for (ifa = ifa_list; ifa != NULL; ifa = ifa->ifa_next) { 
+        dl = (struct sockaddr_dl*)ifa->ifa_addr; 
+        if (dl->sdl_family == AF_LINK && dl->sdl_type == IFT_ETHER) {
+            memcpy(name, dl->sdl_data, dl->sdl_nlen);
+            name[dl->sdl_nlen] = '\0';
+            addr = (unsigned char*)LLADDR(dl);
+            if(strcmp(name, interface) == 0) {
+                sprintf(macaddr, "%02x:%02x:%02x:%02x:%02x:%02x", addr[0], addr[1], addr[2], addr[3], addr[4], addr[5]);
+                printf("Mac address for %s: %s\n", name, macaddr); 
+            }
+        }
+    } 
+    freeifaddrs(ifa_list); 
+    mac_address = macaddr;
+    return mac_address;
+}
+#else
 std::string find_mac(std::string interface) {
     std::string path = "/sys/class/net/";
     std::string file = "/address";
@@ -139,6 +168,7 @@ std::string find_mac(std::string interface) {
     iface_stream.close();
     return mac_address;
 }
+#endif
 
 std::string find_mac() {
 
